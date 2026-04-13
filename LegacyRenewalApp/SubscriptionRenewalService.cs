@@ -9,6 +9,8 @@ namespace LegacyRenewalApp
         private readonly IBillingGateway _billingGateway;
         private readonly IRenewalRequestValidator _renewalRequestValidator;
         private readonly IDiscountCalculator _discountCalculator;
+        private readonly ISupportFeeCalculator _supportFeeCalculator;
+        private readonly IPaymentFeeCalculator _paymentFeeCalculator;
 
         public SubscriptionRenewalService()
             : this(
@@ -16,7 +18,9 @@ namespace LegacyRenewalApp
                 new SubscriptionPlanRepository(),
                 new LegacyBillingGatewayAdapter(),
                 new RenewalRequestValidator(),
-                new DiscountCalculator())
+                new DiscountCalculator(),
+                new SupportFeeCalculator(),
+                new PaymentFeeCalculator())
         {
         }
 
@@ -25,13 +29,17 @@ namespace LegacyRenewalApp
             ISubscriptionPlanRepository subscriptionPlanRepository,
             IBillingGateway billingGateway,
             IRenewalRequestValidator renewalRequestValidator,
-            IDiscountCalculator discountCalculator)
+            IDiscountCalculator discountCalculator,
+            ISupportFeeCalculator supportFeeCalculator,
+            IPaymentFeeCalculator paymentFeeCalculator)
         {
             _customerRepository = customerRepository ?? throw new ArgumentNullException(nameof(customerRepository));
             _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
             _billingGateway = billingGateway ?? throw new ArgumentNullException(nameof(billingGateway));
             _renewalRequestValidator = renewalRequestValidator ?? throw new ArgumentNullException(nameof(renewalRequestValidator));
             _discountCalculator = discountCalculator ?? throw new ArgumentNullException(nameof(discountCalculator));
+            _supportFeeCalculator = supportFeeCalculator ?? throw new ArgumentNullException(nameof(supportFeeCalculator));
+            _paymentFeeCalculator = paymentFeeCalculator ?? throw new ArgumentNullException(nameof(paymentFeeCalculator));
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -65,49 +73,32 @@ namespace LegacyRenewalApp
             decimal subtotalAfterDiscount = discountResult.SubtotalAfterDiscount;
             string notes = discountResult.Notes;
 
-            decimal supportFee = 0m;
+            decimal supportFee = _supportFeeCalculator.Calculate(request);
             if (request.IncludePremiumSupport)
             {
-                if (request.PlanCode == "START")
-                {
-                    supportFee = 250m;
-                }
-                else if (request.PlanCode == "PRO")
-                {
-                    supportFee = 400m;
-                }
-                else if (request.PlanCode == "ENTERPRISE")
-                {
-                    supportFee = 700m;
-                }
-
                 notes += "premium support included; ";
             }
 
-            decimal paymentFee = 0m;
+            decimal paymentFee = _paymentFeeCalculator.Calculate(
+                request.PaymentMethod,
+                subtotalAfterDiscount,
+                supportFee);
+
             if (request.PaymentMethod == "CARD")
             {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
                 notes += "card payment fee; ";
             }
             else if (request.PaymentMethod == "BANK_TRANSFER")
             {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.01m;
                 notes += "bank transfer fee; ";
             }
             else if (request.PaymentMethod == "PAYPAL")
             {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.035m;
                 notes += "paypal fee; ";
             }
             else if (request.PaymentMethod == "INVOICE")
             {
-                paymentFee = 0m;
                 notes += "invoice payment; ";
-            }
-            else
-            {
-                throw new ArgumentException("Unsupported payment method");
             }
 
             decimal taxRate = 0.20m;
