@@ -11,6 +11,7 @@ namespace LegacyRenewalApp
         private readonly IDiscountCalculator _discountCalculator;
         private readonly ISupportFeeCalculator _supportFeeCalculator;
         private readonly IPaymentFeeCalculator _paymentFeeCalculator;
+        private readonly ITaxCalculator _taxCalculator;
 
         public SubscriptionRenewalService()
             : this(
@@ -20,7 +21,8 @@ namespace LegacyRenewalApp
                 new RenewalRequestValidator(),
                 new DiscountCalculator(),
                 new SupportFeeCalculator(),
-                new PaymentFeeCalculator())
+                new PaymentFeeCalculator(),
+                new TaxCalculator())
         {
         }
 
@@ -31,7 +33,8 @@ namespace LegacyRenewalApp
             IRenewalRequestValidator renewalRequestValidator,
             IDiscountCalculator discountCalculator,
             ISupportFeeCalculator supportFeeCalculator,
-            IPaymentFeeCalculator paymentFeeCalculator)
+            IPaymentFeeCalculator paymentFeeCalculator,
+            ITaxCalculator taxCalculator)
         {
             _customerRepository = customerRepository ?? throw new ArgumentNullException(nameof(customerRepository));
             _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
@@ -40,6 +43,7 @@ namespace LegacyRenewalApp
             _discountCalculator = discountCalculator ?? throw new ArgumentNullException(nameof(discountCalculator));
             _supportFeeCalculator = supportFeeCalculator ?? throw new ArgumentNullException(nameof(supportFeeCalculator));
             _paymentFeeCalculator = paymentFeeCalculator ?? throw new ArgumentNullException(nameof(paymentFeeCalculator));
+            _taxCalculator = taxCalculator ?? throw new ArgumentNullException(nameof(taxCalculator));
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -101,26 +105,9 @@ namespace LegacyRenewalApp
                 notes += "invoice payment; ";
             }
 
-            decimal taxRate = 0.20m;
-            if (customer.Country == "Poland")
-            {
-                taxRate = 0.23m;
-            }
-            else if (customer.Country == "Germany")
-            {
-                taxRate = 0.19m;
-            }
-            else if (customer.Country == "Czech Republic")
-            {
-                taxRate = 0.21m;
-            }
-            else if (customer.Country == "Norway")
-            {
-                taxRate = 0.25m;
-            }
-
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
-            decimal taxAmount = taxBase * taxRate;
+            var taxResult = _taxCalculator.Calculate(customer.Country, taxBase);
+            decimal taxAmount = taxResult.TaxAmount;
             decimal finalAmount = taxBase + taxAmount;
 
             if (finalAmount < 500m)
