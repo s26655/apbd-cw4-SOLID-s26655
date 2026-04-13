@@ -12,6 +12,7 @@ namespace LegacyRenewalApp
         private readonly ISupportFeeCalculator _supportFeeCalculator;
         private readonly IPaymentFeeCalculator _paymentFeeCalculator;
         private readonly ITaxCalculator _taxCalculator;
+        private readonly IRenewalInvoiceFactory _renewalInvoiceFactory;
 
         public SubscriptionRenewalService()
             : this(
@@ -22,7 +23,8 @@ namespace LegacyRenewalApp
                 new DiscountCalculator(),
                 new SupportFeeCalculator(),
                 new PaymentFeeCalculator(),
-                new TaxCalculator())
+                new TaxCalculator(),
+                new RenewalInvoiceFactory())
         {
         }
 
@@ -34,7 +36,8 @@ namespace LegacyRenewalApp
             IDiscountCalculator discountCalculator,
             ISupportFeeCalculator supportFeeCalculator,
             IPaymentFeeCalculator paymentFeeCalculator,
-            ITaxCalculator taxCalculator)
+            ITaxCalculator taxCalculator,
+            IRenewalInvoiceFactory renewalInvoiceFactory)
         {
             _customerRepository = customerRepository ?? throw new ArgumentNullException(nameof(customerRepository));
             _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
@@ -44,6 +47,7 @@ namespace LegacyRenewalApp
             _supportFeeCalculator = supportFeeCalculator ?? throw new ArgumentNullException(nameof(supportFeeCalculator));
             _paymentFeeCalculator = paymentFeeCalculator ?? throw new ArgumentNullException(nameof(paymentFeeCalculator));
             _taxCalculator = taxCalculator ?? throw new ArgumentNullException(nameof(taxCalculator));
+            _renewalInvoiceFactory = renewalInvoiceFactory ?? throw new ArgumentNullException(nameof(renewalInvoiceFactory));
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -116,22 +120,21 @@ namespace LegacyRenewalApp
                 notes += "minimum invoice amount applied; ";
             }
 
-            var invoice = new RenewalInvoice
-            {
-                InvoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{request.CustomerId}-{request.PlanCode}",
-                CustomerName = customer.FullName,
-                PlanCode = request.PlanCode,
-                PaymentMethod = request.PaymentMethod,
-                SeatCount = request.SeatCount,
-                BaseAmount = Math.Round(baseAmount, 2, MidpointRounding.AwayFromZero),
-                DiscountAmount = Math.Round(discountAmount, 2, MidpointRounding.AwayFromZero),
-                SupportFee = Math.Round(supportFee, 2, MidpointRounding.AwayFromZero),
-                PaymentFee = Math.Round(paymentFee, 2, MidpointRounding.AwayFromZero),
-                TaxAmount = Math.Round(taxAmount, 2, MidpointRounding.AwayFromZero),
-                FinalAmount = Math.Round(finalAmount, 2, MidpointRounding.AwayFromZero),
-                Notes = notes.Trim(),
-                GeneratedAt = DateTime.UtcNow
-            };
+            var invoiceData = new RenewalInvoiceData(
+                request.CustomerId,
+                customer.FullName,
+                request.PlanCode,
+                request.PaymentMethod,
+                request.SeatCount,
+                baseAmount,
+                discountAmount,
+                supportFee,
+                paymentFee,
+                taxAmount,
+                finalAmount,
+                notes);
+
+            var invoice = _renewalInvoiceFactory.Create(invoiceData);
 
             _billingGateway.SaveInvoice(invoice);
 
