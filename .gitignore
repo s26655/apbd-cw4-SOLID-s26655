@@ -1,0 +1,12 @@
+cat > .gitignore <<'EOF'
+# Build artifacts
+bin/
+obj/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+EOF
