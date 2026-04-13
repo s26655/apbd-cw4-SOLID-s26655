@@ -13,6 +13,7 @@ namespace LegacyRenewalApp
         private readonly IPaymentFeeCalculator _paymentFeeCalculator;
         private readonly ITaxCalculator _taxCalculator;
         private readonly IRenewalInvoiceFactory _renewalInvoiceFactory;
+        private readonly IRenewalNotesBuilder _renewalNotesBuilder;
 
         public SubscriptionRenewalService()
             : this(
@@ -24,7 +25,8 @@ namespace LegacyRenewalApp
                 new SupportFeeCalculator(),
                 new PaymentFeeCalculator(),
                 new TaxCalculator(),
-                new RenewalInvoiceFactory())
+                new RenewalInvoiceFactory(),
+                new RenewalNotesBuilder())
         {
         }
 
@@ -37,7 +39,8 @@ namespace LegacyRenewalApp
             ISupportFeeCalculator supportFeeCalculator,
             IPaymentFeeCalculator paymentFeeCalculator,
             ITaxCalculator taxCalculator,
-            IRenewalInvoiceFactory renewalInvoiceFactory)
+            IRenewalInvoiceFactory renewalInvoiceFactory,
+            IRenewalNotesBuilder renewalNotesBuilder)
         {
             _customerRepository = customerRepository ?? throw new ArgumentNullException(nameof(customerRepository));
             _subscriptionPlanRepository = subscriptionPlanRepository ?? throw new ArgumentNullException(nameof(subscriptionPlanRepository));
@@ -48,6 +51,7 @@ namespace LegacyRenewalApp
             _paymentFeeCalculator = paymentFeeCalculator ?? throw new ArgumentNullException(nameof(paymentFeeCalculator));
             _taxCalculator = taxCalculator ?? throw new ArgumentNullException(nameof(taxCalculator));
             _renewalInvoiceFactory = renewalInvoiceFactory ?? throw new ArgumentNullException(nameof(renewalInvoiceFactory));
+            _renewalNotesBuilder = renewalNotesBuilder ?? throw new ArgumentNullException(nameof(renewalNotesBuilder));
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -79,46 +83,30 @@ namespace LegacyRenewalApp
             var discountResult = _discountCalculator.Calculate(customer, plan, request, baseAmount);
             decimal discountAmount = discountResult.DiscountAmount;
             decimal subtotalAfterDiscount = discountResult.SubtotalAfterDiscount;
-            string notes = discountResult.Notes;
 
             decimal supportFee = _supportFeeCalculator.Calculate(request);
-            if (request.IncludePremiumSupport)
-            {
-                notes += "premium support included; ";
-            }
 
             decimal paymentFee = _paymentFeeCalculator.Calculate(
                 request.PaymentMethod,
                 subtotalAfterDiscount,
                 supportFee);
 
-            if (request.PaymentMethod == "CARD")
-            {
-                notes += "card payment fee; ";
-            }
-            else if (request.PaymentMethod == "BANK_TRANSFER")
-            {
-                notes += "bank transfer fee; ";
-            }
-            else if (request.PaymentMethod == "PAYPAL")
-            {
-                notes += "paypal fee; ";
-            }
-            else if (request.PaymentMethod == "INVOICE")
-            {
-                notes += "invoice payment; ";
-            }
-
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
             var taxResult = _taxCalculator.Calculate(customer.Country, taxBase);
             decimal taxAmount = taxResult.TaxAmount;
             decimal finalAmount = taxBase + taxAmount;
 
+            bool minimumInvoiceAmountApplied = false;
             if (finalAmount < 500m)
             {
                 finalAmount = 500m;
-                notes += "minimum invoice amount applied; ";
+                minimumInvoiceAmountApplied = true;
             }
+
+            string notes = _renewalNotesBuilder.Build(
+                discountResult.Notes,
+                request,
+                minimumInvoiceAmountApplied);
 
             var invoiceData = new RenewalInvoiceData(
                 request.CustomerId,
